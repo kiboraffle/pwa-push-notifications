@@ -4,7 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-const connectDB = require('./config/database');
+const { connectDB } = require('./config/database');
 const authRoutes = require('./routes/auth');
 const healthRoutes = require('./routes/health');
 const clientRoutes = require('./routes/clients');
@@ -15,7 +15,7 @@ const subscribeRoutes = require('./routes/subscribe');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
+// Connect to PostgreSQL (Supabase)
 connectDB();
 
 // Security middleware

@@ -1,104 +1,154 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const pushSubscriptionSchema = new mongoose.Schema({
+const PushSubscription = sequelize.define('PushSubscription', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   clientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: [true, 'Client ID is required']
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Clients',
+      key: 'id'
+    },
+    validate: {
+      notEmpty: {
+        msg: 'Client ID is required'
+      }
+    }
   },
   subscription: {
-    type: Object,
-    required: [true, 'Subscription object is required'],
+    type: DataTypes.JSONB,
+    allowNull: false,
     validate: {
-      validator: function(v) {
-        // Validate that subscription has required properties for web push
-        return v && 
-               typeof v.endpoint === 'string' && 
-               v.keys && 
-               typeof v.keys.p256dh === 'string' && 
-               typeof v.keys.auth === 'string';
+      notEmpty: {
+        msg: 'Subscription object is required'
       },
-      message: 'Subscription must contain endpoint and keys (p256dh, auth)'
+      isValidSubscription(value) {
+        // Validate that subscription has required properties for web push
+        if (!value || 
+            typeof value.endpoint !== 'string' || 
+            !value.keys || 
+            typeof value.keys.p256dh !== 'string' || 
+            typeof value.keys.auth !== 'string') {
+          throw new Error('Subscription must contain endpoint and keys (p256dh, auth)');
+        }
+      }
     }
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   },
   metadata: {
-    domain: { type: String, default: 'unknown' },
-    userAgent: { type: String, default: 'unknown' },
-    ipAddress: { type: String },
-    subscribedAt: { type: Date, default: Date.now }
+    type: DataTypes.JSONB,
+    defaultValue: {
+      domain: 'unknown',
+      userAgent: 'unknown',
+      subscribedAt: new Date()
+    }
   }
 }, {
-  timestamps: true
-});
-
-// Compound index to prevent duplicate subscriptions for the same client
-pushSubscriptionSchema.index({ clientId: 1, 'subscription.endpoint': 1 }, { unique: true });
-
-// Index for better query performance
-pushSubscriptionSchema.index({ clientId: 1 });
-pushSubscriptionSchema.index({ createdAt: -1 });
-
-// Virtual to populate client information
-pushSubscriptionSchema.virtual('client', {
-  ref: 'Client',
-  localField: 'clientId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Ensure virtual fields are serialized
-pushSubscriptionSchema.set('toJSON', { virtuals: true });
-pushSubscriptionSchema.set('toObject', { virtuals: true });
-
-// Pre-save middleware to validate client exists and is active
-pushSubscriptionSchema.pre('save', async function(next) {
-  try {
-    const Client = mongoose.model('Client');
-    const client = await Client.findById(this.clientId);
-    
-    if (!client) {
-      return next(new Error('Client not found'));
+  tableName: 'PushSubscriptions',
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['clientId', [sequelize.literal("(subscription->>'endpoint')"), 'endpoint']]
+    },
+    {
+      fields: ['clientId']
+    },
+    {
+      fields: ['createdAt']
     }
-    
-    if (client.status !== 'active') {
-      return next(new Error('Cannot add subscription to inactive client'));
+  ],
+  hooks: {
+    beforeCreate: async (subscription, options) => {
+      const { Client } = require('./index');
+      
+      const client = await Client.findByPk(subscription.clientId, {
+        transaction: options.transaction
+      });
+      
+      if (!client) {
+        throw new Error('Client not found');
+      }
+      
+      if (client.status !== 'active') {
+        throw new Error('Cannot add subscription to inactive client');
+      }
+      
+      // Set subscribedAt in metadata if not provided
+      if (!subscription.metadata) {
+        subscription.metadata = {};
+      }
+      if (!subscription.metadata.subscribedAt) {
+        subscription.metadata.subscribedAt = new Date();
+      }
+    },
+    beforeUpdate: async (subscription, options) => {
+      if (subscription.changed('clientId')) {
+        const { Client } = require('./index');
+        
+        const client = await Client.findByPk(subscription.clientId, {
+          transaction: options.transaction
+        });
+        
+        if (!client) {
+          throw new Error('Client not found');
+        }
+        
+        if (client.status !== 'active') {
+          throw new Error('Cannot add subscription to inactive client');
+        }
+      }
     }
-    
-    next();
-  } catch (error) {
-    next(error);
   }
 });
 
 // Static method to find subscriptions by client
-pushSubscriptionSchema.statics.findByClient = function(clientId) {
-  return this.find({ clientId }).populate('client');
+PushSubscription.findByClient = function(clientId) {
+  return this.findAll({
+    where: { clientId },
+    include: [{
+      model: require('./Client'),
+      as: 'client'
+    }]
+  });
 };
 
 // Static method to find active subscriptions by client
-pushSubscriptionSchema.statics.findActiveByClient = function(clientId) {
-  return this.find({ clientId })
-    .populate({
-      path: 'client',
-      match: { status: 'active' }
-    })
-    .then(subscriptions => subscriptions.filter(sub => sub.client));
+PushSubscription.findActiveByClient = async function(clientId) {
+  const { Client } = require('./index');
+  
+  return this.findAll({
+    where: { clientId },
+    include: [{
+      model: Client,
+      as: 'client',
+      where: { status: 'active' },
+      required: true
+    }]
+  });
 };
 
 // Static method to remove subscription by endpoint
-pushSubscriptionSchema.statics.removeByEndpoint = function(endpoint, clientId) {
-  return this.deleteOne({ 
-    clientId, 
-    'subscription.endpoint': endpoint 
+PushSubscription.removeByEndpoint = function(endpoint, clientId) {
+  return this.destroy({
+    where: {
+      clientId,
+      [sequelize.Op.and]: [
+        sequelize.where(
+          sequelize.literal("subscription->>'endpoint'"),
+          endpoint
+        )
+      ]
+    }
   });
 };
 
 // Instance method to check if subscription is valid
-pushSubscriptionSchema.methods.isValid = function() {
+PushSubscription.prototype.isValid = function() {
   const subscription = this.subscription;
   return subscription && 
          subscription.endpoint && 
@@ -107,4 +157,4 @@ pushSubscriptionSchema.methods.isValid = function() {
          subscription.keys.auth;
 };
 
-module.exports = mongoose.model('PushSubscription', pushSubscriptionSchema);
+module.exports = PushSubscription;

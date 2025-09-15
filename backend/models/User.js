@@ -1,72 +1,111 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
+const { sequelize } = require('../config/database');
 
-const userSchema = new mongoose.Schema({
+const User = sequelize.define('User', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   email: {
-    type: String,
-    required: [true, 'Email is required'],
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+    validate: {
+      isEmail: {
+        msg: 'Please enter a valid email'
+      },
+      notEmpty: {
+        msg: 'Email is required'
+      }
+    },
+    set(value) {
+      this.setDataValue('email', value.toLowerCase().trim());
+    }
   },
   password: {
-    type: String,
-    required: [true, 'Password is required'],
-    minlength: [6, 'Password must be at least 6 characters long']
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      len: {
+        args: [6, 255],
+        msg: 'Password must be at least 6 characters long'
+      },
+      notEmpty: {
+        msg: 'Password is required'
+      }
+    }
   },
   role: {
-    type: String,
-    required: [true, 'Role is required'],
-    enum: {
-      values: ['master', 'client'],
-      message: 'Role must be either master or client'
+    type: DataTypes.ENUM('master', 'client'),
+    allowNull: false,
+    validate: {
+      isIn: {
+        args: [['master', 'client']],
+        msg: 'Role must be either master or client'
+      },
+      notEmpty: {
+        msg: 'Role is required'
+      }
     }
   },
   clientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: function() {
-      return this.role === 'client';
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'Clients',
+      key: 'id'
+    },
+    validate: {
+      clientRoleValidation() {
+        if (this.role === 'client' && !this.clientId) {
+          throw new Error('Client ID is required for client role');
+        }
+      }
     }
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
-  timestamps: true
-});
-
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-  // Only hash the password if it has been modified (or is new)
-  if (!this.isModified('password')) return next();
-  
-  try {
-    // Hash password with cost of 12
-    const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
-    this.password = await bcrypt.hash(this.password, saltRounds);
-    next();
-  } catch (error) {
-    next(error);
-  }
+  tableName: 'Users',
+  timestamps: true,
+  hooks: {
+    beforeCreate: async (user) => {
+      if (user.password) {
+        const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
+        user.password = await bcrypt.hash(user.password, saltRounds);
+      }
+    },
+    beforeUpdate: async (user) => {
+      if (user.changed('password')) {
+        const saltRounds = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
+        user.password = await bcrypt.hash(user.password, saltRounds);
+      }
+    }
+  },
+  indexes: [
+    {
+      unique: true,
+      fields: ['email']
+    },
+    {
+      fields: ['clientId']
+    },
+    {
+      fields: ['role']
+    }
+  ]
 });
 
 // Instance method to check password
-userSchema.methods.comparePassword = async function(candidatePassword) {
+User.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Remove password from JSON output
-userSchema.methods.toJSON = function() {
-  const userObject = this.toObject();
-  delete userObject.password;
-  return userObject;
+User.prototype.toJSON = function() {
+  const values = Object.assign({}, this.get());
+  delete values.password;
+  return values;
 };
 
-// Index for better query performance
-userSchema.index({ email: 1 });
-userSchema.index({ clientId: 1 });
-
-module.exports = mongoose.model('User', userSchema);
+module.exports = User;

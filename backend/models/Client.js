@@ -1,95 +1,102 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const clientSchema = new mongoose.Schema({
+const Client = sequelize.define('Client', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   clientName: {
-    type: String,
-    required: [true, 'Client name is required'],
-    trim: true,
-    maxlength: [100, 'Client name cannot exceed 100 characters']
+    type: DataTypes.STRING(100),
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'Client name is required'
+      },
+      len: {
+        args: [1, 100],
+        msg: 'Client name cannot exceed 100 characters'
+      }
+    },
+    set(value) {
+      this.setDataValue('clientName', value.trim());
+    }
   },
   status: {
-    type: String,
-    required: [true, 'Status is required'],
-    enum: {
-      values: ['active', 'inactive'],
-      message: 'Status must be either active or inactive'
-    },
-    default: 'active'
+    type: DataTypes.ENUM('active', 'inactive'),
+    allowNull: false,
+    defaultValue: 'active',
+    validate: {
+      isIn: {
+        args: [['active', 'inactive']],
+        msg: 'Status must be either active or inactive'
+      },
+      notEmpty: {
+        msg: 'Status is required'
+      }
+    }
   },
   brandLogoUrl: {
-    type: String,
-    trim: true,
+    type: DataTypes.TEXT,
+    allowNull: true,
     validate: {
-      validator: function(v) {
-        // Allow empty string or valid URL
-        if (!v) return true;
-        return /^https?:\/\/.+/.test(v);
-      },
-      message: 'Brand logo URL must be a valid HTTP/HTTPS URL'
+      isUrl: {
+        msg: 'Brand logo URL must be a valid HTTP/HTTPS URL'
+      }
+    },
+    set(value) {
+      if (value) {
+        this.setDataValue('brandLogoUrl', value.trim());
+      } else {
+        this.setDataValue('brandLogoUrl', null);
+      }
     }
   },
   managedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: [true, 'Managed by user is required']
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Users',
+      key: 'id'
+    },
+    validate: {
+      notEmpty: {
+        msg: 'Managed by user is required'
+      }
+    }
   }
 }, {
-  timestamps: true
-});
-
-// Virtual for getting domains associated with this client
-clientSchema.virtual('domains', {
-  ref: 'Domain',
-  localField: '_id',
-  foreignField: 'clientId'
-});
-
-// Virtual for getting push subscriptions associated with this client
-clientSchema.virtual('pushSubscriptions', {
-  ref: 'PushSubscription',
-  localField: '_id',
-  foreignField: 'clientId'
-});
-
-// Virtual for getting notifications associated with this client
-clientSchema.virtual('notifications', {
-  ref: 'Notification',
-  localField: '_id',
-  foreignField: 'clientId'
-});
-
-// Ensure virtual fields are serialized
-clientSchema.set('toJSON', { virtuals: true });
-clientSchema.set('toObject', { virtuals: true });
-
-// Index for better query performance
-clientSchema.index({ managedBy: 1 });
-clientSchema.index({ status: 1 });
-clientSchema.index({ createdAt: -1 });
-
-// Pre-remove middleware to clean up related documents
-clientSchema.pre('remove', async function(next) {
-  try {
-    // Remove all related domains
-    await mongoose.model('Domain').deleteMany({ clientId: this._id });
-    
-    // Remove all related push subscriptions
-    await mongoose.model('PushSubscription').deleteMany({ clientId: this._id });
-    
-    // Remove all related notifications
-    await mongoose.model('Notification').deleteMany({ clientId: this._id });
-    
-    // Remove all users associated with this client
-    await mongoose.model('User').deleteMany({ clientId: this._id });
-    
-    next();
-  } catch (error) {
-    next(error);
+  tableName: 'Clients',
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['managedBy']
+    },
+    {
+      fields: ['status']
+    },
+    {
+      fields: ['createdAt']
+    }
+  ],
+  hooks: {
+    beforeDestroy: async (client, options) => {
+      const { Domain, PushSubscription, Notification, User } = require('./index');
+      
+      // Remove all related domains
+      await Domain.destroy({ where: { clientId: client.id }, transaction: options.transaction });
+      
+      // Remove all related push subscriptions
+      await PushSubscription.destroy({ where: { clientId: client.id }, transaction: options.transaction });
+      
+      // Remove all related notifications
+      await Notification.destroy({ where: { clientId: client.id }, transaction: options.transaction });
+      
+      // Remove all users associated with this client
+      await User.destroy({ where: { clientId: client.id }, transaction: options.transaction });
+    }
   }
 });
 
-module.exports = mongoose.model('Client', clientSchema);
+module.exports = Client;

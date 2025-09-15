@@ -1,82 +1,122 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 
-const domainSchema = new mongoose.Schema({
+const Domain = sequelize.define('Domain', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true
+  },
   clientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Client',
-    required: [true, 'Client ID is required']
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'Clients',
+      key: 'id'
+    },
+    validate: {
+      notEmpty: {
+        msg: 'Client ID is required'
+      }
+    }
   },
   domainName: {
-    type: String,
-    required: [true, 'Domain name is required'],
-    trim: true,
-    lowercase: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     validate: {
-      validator: function(v) {
-        // Basic domain validation regex
-        return /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/.test(v) || 
-               /^localhost(:[0-9]+)?$/.test(v) ||
-               /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(:[0-9]+)?$/.test(v);
+      notEmpty: {
+        msg: 'Domain name is required'
       },
-      message: 'Please enter a valid domain name'
+      isDomain(value) {
+        // Basic domain validation regex
+        const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
+        const localhostRegex = /^localhost(:[0-9]+)?$/;
+        const ipRegex = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(:[0-9]+)?$/;
+        
+        if (!domainRegex.test(value) && !localhostRegex.test(value) && !ipRegex.test(value)) {
+          throw new Error('Please enter a valid domain name');
+        }
+      }
+    },
+    set(value) {
+      this.setDataValue('domainName', value.toLowerCase().trim());
     }
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  verified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   }
 }, {
-  timestamps: true
-});
-
-// Compound index to ensure unique domain per client
-domainSchema.index({ clientId: 1, domainName: 1 }, { unique: true });
-
-// Index for better query performance
-domainSchema.index({ clientId: 1 });
-domainSchema.index({ createdAt: -1 });
-
-// Virtual to populate client information
-domainSchema.virtual('client', {
-  ref: 'Client',
-  localField: 'clientId',
-  foreignField: '_id',
-  justOne: true
-});
-
-// Ensure virtual fields are serialized
-domainSchema.set('toJSON', { virtuals: true });
-domainSchema.set('toObject', { virtuals: true });
-
-// Pre-save middleware to validate client exists and is active
-domainSchema.pre('save', async function(next) {
-  try {
-    const Client = mongoose.model('Client');
-    const client = await Client.findById(this.clientId);
-    
-    if (!client) {
-      return next(new Error('Client not found'));
+  tableName: 'Domains',
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['clientId', 'domainName']
+    },
+    {
+      fields: ['clientId']
+    },
+    {
+      fields: ['createdAt']
     }
-    
-    if (client.status !== 'active') {
-      return next(new Error('Cannot add domain to inactive client'));
+  ],
+  hooks: {
+    beforeCreate: async (domain, options) => {
+      const { Client } = require('./index');
+      
+      const client = await Client.findByPk(domain.clientId, {
+        transaction: options.transaction
+      });
+      
+      if (!client) {
+        throw new Error('Client not found');
+      }
+      
+      if (client.status !== 'active') {
+        throw new Error('Cannot add domain to inactive client');
+      }
+    },
+    beforeUpdate: async (domain, options) => {
+      if (domain.changed('clientId')) {
+        const { Client } = require('./index');
+        
+        const client = await Client.findByPk(domain.clientId, {
+          transaction: options.transaction
+        });
+        
+        if (!client) {
+          throw new Error('Client not found');
+        }
+        
+        if (client.status !== 'active') {
+          throw new Error('Cannot add domain to inactive client');
+        }
+      }
     }
-    
-    next();
-  } catch (error) {
-    next(error);
   }
 });
 
 // Static method to find domains by client
-domainSchema.statics.findByClient = function(clientId) {
-  return this.find({ clientId }).populate('client');
+Domain.findByClient = function(clientId) {
+  return this.findAll({
+    where: { clientId },
+    include: [{
+      model: require('./Client'),
+      as: 'client'
+    }]
+  });
 };
 
 // Static method to verify domain ownership
-domainSchema.statics.verifyDomainOwnership = async function(domainName, clientId) {
-  const domain = await this.findOne({ domainName, clientId });
+Domain.verifyDomainOwnership = async function(domainName, clientId) {
+  const domain = await this.findOne({
+    where: {
+      domainName: domainName.toLowerCase().trim(),
+      clientId
+    }
+  });
   return !!domain;
 };
 
-module.exports = mongoose.model('Domain', domainSchema);
+module.exports = Domain;
