@@ -1,5 +1,9 @@
 const { Sequelize } = require('sequelize');
 
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL environment variable is required');
+}
+
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
   dialectOptions: {
@@ -8,7 +12,13 @@ const sequelize = new Sequelize(process.env.DATABASE_URL, {
       rejectUnauthorized: false
     } : false
   },
-  logging: process.env.NODE_ENV === 'development' ? console.log : false
+  logging: process.env.NODE_ENV === 'development' ? console.log : false,
+  pool: {
+    max: 5,
+    min: 0,
+    acquire: 30000,
+    idle: 10000
+  }
 });
 
 const connectDB = async () => {
@@ -22,8 +32,9 @@ const connectDB = async () => {
       console.log('✅ Database synchronized');
     }
   } catch (error) {
-    console.error('❌ Unable to connect to database:', error);
-    process.exit(1);
+    console.error('❌ Unable to connect to database:', error.message);
+    console.error('DATABASE_URL:', process.env.DATABASE_URL ? 'Set' : 'Not set');
+    throw error;
   }
 };
 
