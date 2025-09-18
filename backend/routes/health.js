@@ -1,12 +1,21 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const { sequelize } = require('../config/database');
 const router = express.Router();
 
 // Health check endpoint
 router.get('/', async (req, res) => {
   try {
     // Check database connection
-    const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    let dbStatus = 'disconnected';
+    let dbName = 'unknown';
+    
+    try {
+      await sequelize.authenticate();
+      dbStatus = 'connected';
+      dbName = sequelize.getDatabaseName();
+    } catch (dbError) {
+      console.error('Database connection failed:', dbError.message);
+    }
     
     // Get basic system info
     const healthCheck = {
@@ -16,7 +25,7 @@ router.get('/', async (req, res) => {
       environment: process.env.NODE_ENV || 'development',
       database: {
         status: dbStatus,
-        name: mongoose.connection.name || 'unknown'
+        name: dbName
       },
       memory: {
         used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100,

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+// Validation utilities for Sequelize-based application
 
 // Email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -125,7 +125,10 @@ const validateObjectId = (id, fieldName = 'ID') => {
     return { isValid: false, message: `${fieldName} is required` };
   }
   
-  if (!mongoose.Types.ObjectId.isValid(id)) {
+  // UUID v4 validation regex
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  
+  if (!uuidRegex.test(id)) {
     return { isValid: false, message: `Invalid ${fieldName} format` };
   }
   
