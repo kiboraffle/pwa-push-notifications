@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Card,
@@ -10,7 +10,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Chip,
   Avatar,
   IconButton,
@@ -26,8 +25,6 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
-  useMediaQuery,
-  useTheme
 } from '@mui/material';
 import {
   Add,
@@ -36,7 +33,6 @@ import {
   Edit,
   Delete,
   Visibility,
-  FilterList,
   People
 } from '@mui/icons-material';
 import axios from 'axios';
@@ -46,7 +42,6 @@ import LoadingSpinner, { TableLoadingSkeleton } from '../../components/LoadingSp
 
 const ClientManagement = () => {
   const [clients, setClients] = useState([]);
-  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(0);
@@ -63,13 +58,10 @@ const ClientManagement = () => {
   });
   const { showError, showSuccess } = useNotification();
   const { setLoading, isLoading } = useLoading();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     try {
       setLoading('clients', true, 'Loading clients...');
-      setError('');
       
       const params = {
         page: page + 1,
@@ -86,16 +78,15 @@ const ClientManagement = () => {
     } catch (error) {
       console.error('Failed to fetch clients:', error);
       const errorMessage = error.response?.data?.message || 'Failed to load clients';
-      setError(errorMessage);
       showError(errorMessage);
     } finally {
       setLoading('clients', false);
     }
-  };
+  }, [page, rowsPerPage, searchTerm, statusFilter, setLoading, showError]);
 
   useEffect(() => {
     fetchClients();
-  }, [page, rowsPerPage, searchTerm, statusFilter]);
+  }, [fetchClients]);
 
   const handleSearch = (event) => {
     setSearchTerm(event.target.value);
