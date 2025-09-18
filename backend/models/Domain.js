@@ -3,12 +3,12 @@ const { sequelize } = require('../config/database');
 
 const Domain = sequelize.define('Domain', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
   clientId: {
-    type: DataTypes.UUID,
+    type: DataTypes.INTEGER,
     allowNull: false,
     references: {
       model: 'Clients',
@@ -20,7 +20,7 @@ const Domain = sequelize.define('Domain', {
       }
     }
   },
-  domainName: {
+  domain: {
     type: DataTypes.STRING,
     allowNull: false,
     validate: {
@@ -39,12 +39,13 @@ const Domain = sequelize.define('Domain', {
       }
     },
     set(value) {
-      this.setDataValue('domainName', value.toLowerCase().trim());
+      this.setDataValue('domain', value.toLowerCase().trim());
     }
   },
-  verified: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: false
+  status: {
+    type: DataTypes.STRING(50),
+    allowNull: false,
+    defaultValue: 'active'
   }
 }, {
   tableName: 'Domains',
@@ -52,7 +53,7 @@ const Domain = sequelize.define('Domain', {
   indexes: [
     {
       unique: true,
-      fields: ['clientId', 'domainName']
+      fields: ['clientId', 'domain']
     },
     {
       fields: ['clientId']

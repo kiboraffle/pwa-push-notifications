@@ -4,9 +4,19 @@ const { sequelize } = require('../config/database');
 
 const User = sequelize.define('User', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
+  },
+  username: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    validate: {
+      notEmpty: {
+        msg: 'Username is required'
+      }
+    }
   },
   email: {
     type: DataTypes.STRING,
@@ -38,30 +48,12 @@ const User = sequelize.define('User', {
     }
   },
   role: {
-    type: DataTypes.ENUM('master', 'client'),
+    type: DataTypes.STRING(50),
     allowNull: false,
+    defaultValue: 'user',
     validate: {
-      isIn: {
-        args: [['master', 'client']],
-        msg: 'Role must be either master or client'
-      },
       notEmpty: {
         msg: 'Role is required'
-      }
-    }
-  },
-  clientId: {
-    type: DataTypes.UUID,
-    allowNull: true,
-    references: {
-      model: 'Clients',
-      key: 'id'
-    },
-    validate: {
-      clientRoleValidation() {
-        if (this.role === 'client' && !this.clientId) {
-          throw new Error('Client ID is required for client role');
-        }
       }
     }
   }
@@ -87,9 +79,7 @@ const User = sequelize.define('User', {
       unique: true,
       fields: ['email']
     },
-    {
-      fields: ['clientId']
-    },
+
     {
       fields: ['role']
     }

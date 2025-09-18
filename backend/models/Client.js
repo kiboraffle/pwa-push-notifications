@@ -3,11 +3,11 @@ const { sequelize } = require('../config/database');
 
 const Client = sequelize.define('Client', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
-  clientName: {
+  name: {
     type: DataTypes.STRING(100),
     allowNull: false,
     validate: {
@@ -20,51 +20,21 @@ const Client = sequelize.define('Client', {
       }
     },
     set(value) {
-      this.setDataValue('clientName', value.trim());
+      this.setDataValue('name', value.trim());
     }
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  phone: {
+    type: DataTypes.STRING(50),
+    allowNull: true
   },
   status: {
-    type: DataTypes.ENUM('active', 'inactive'),
+    type: DataTypes.STRING(50),
     allowNull: false,
-    defaultValue: 'active',
-    validate: {
-      isIn: {
-        args: [['active', 'inactive']],
-        msg: 'Status must be either active or inactive'
-      },
-      notEmpty: {
-        msg: 'Status is required'
-      }
-    }
-  },
-  brandLogoUrl: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    validate: {
-      isUrl: {
-        msg: 'Brand logo URL must be a valid HTTP/HTTPS URL'
-      }
-    },
-    set(value) {
-      if (value) {
-        this.setDataValue('brandLogoUrl', value.trim());
-      } else {
-        this.setDataValue('brandLogoUrl', null);
-      }
-    }
-  },
-  managedBy: {
-    type: DataTypes.UUID,
-    allowNull: false,
-    references: {
-      model: 'Users',
-      key: 'id'
-    },
-    validate: {
-      notEmpty: {
-        msg: 'Managed by user is required'
-      }
-    }
+    defaultValue: 'active'
   }
 }, {
   tableName: 'Clients',

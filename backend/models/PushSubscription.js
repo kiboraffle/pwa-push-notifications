@@ -3,42 +3,50 @@ const { sequelize } = require('../config/database');
 
 const PushSubscription = sequelize.define('PushSubscription', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
-  clientId: {
-    type: DataTypes.UUID,
+  domainId: {
+    type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Clients',
+      model: 'Domains',
       key: 'id'
     },
     validate: {
       notEmpty: {
-        msg: 'Client ID is required'
+        msg: 'Domain ID is required'
       }
     }
   },
-  subscription: {
-    type: DataTypes.JSONB,
+  endpoint: {
+    type: DataTypes.TEXT,
     allowNull: false,
     validate: {
       notEmpty: {
-        msg: 'Subscription object is required'
-      },
-      isValidSubscription(value) {
-        // Validate that subscription has required properties for web push
-        if (!value || 
-            typeof value.endpoint !== 'string' || 
-            !value.keys || 
-            typeof value.keys.p256dh !== 'string' || 
-            typeof value.keys.auth !== 'string') {
-          throw new Error('Subscription must contain endpoint and keys (p256dh, auth)');
-        }
+        msg: 'Endpoint is required'
       }
     }
   },
+  p256dh: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+    validate: {
+      notEmpty: {
+        msg: 'p256dh key is required'
+      }
+    }
+  },
+  auth: {
+     type: DataTypes.TEXT,
+     allowNull: false,
+     validate: {
+       notEmpty: {
+         msg: 'Auth key is required'
+       }
+     }
+   },
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {
@@ -53,10 +61,10 @@ const PushSubscription = sequelize.define('PushSubscription', {
   indexes: [
     {
       unique: true,
-      fields: ['clientId', [sequelize.literal("(subscription->>'endpoint')"), 'endpoint']]
+      fields: ['domainId', 'endpoint']
     },
     {
-      fields: ['clientId']
+      fields: ['domainId']
     },
     {
       fields: ['createdAt']
@@ -64,18 +72,18 @@ const PushSubscription = sequelize.define('PushSubscription', {
   ],
   hooks: {
     beforeCreate: async (subscription, options) => {
-      const { Client } = require('./index');
+      const { Domain } = require('./index');
       
-      const client = await Client.findByPk(subscription.clientId, {
+      const domain = await Domain.findByPk(subscription.domainId, {
         transaction: options.transaction
       });
       
-      if (!client) {
-        throw new Error('Client not found');
+      if (!domain) {
+        throw new Error('Domain not found');
       }
       
-      if (client.status !== 'active') {
-        throw new Error('Cannot add subscription to inactive client');
+      if (domain.status !== 'active') {
+        throw new Error('Cannot add subscription to inactive domain');
       }
       
       // Set subscribedAt in metadata if not provided
@@ -87,45 +95,45 @@ const PushSubscription = sequelize.define('PushSubscription', {
       }
     },
     beforeUpdate: async (subscription, options) => {
-      if (subscription.changed('clientId')) {
-        const { Client } = require('./index');
+      if (subscription.changed('domainId')) {
+        const { Domain } = require('./index');
         
-        const client = await Client.findByPk(subscription.clientId, {
+        const domain = await Domain.findByPk(subscription.domainId, {
           transaction: options.transaction
         });
         
-        if (!client) {
-          throw new Error('Client not found');
+        if (!domain) {
+          throw new Error('Domain not found');
         }
         
-        if (client.status !== 'active') {
-          throw new Error('Cannot add subscription to inactive client');
+        if (domain.status !== 'active') {
+          throw new Error('Cannot add subscription to inactive domain');
         }
       }
     }
   }
 });
 
-// Static method to find subscriptions by client
-PushSubscription.findByClient = function(clientId) {
+// Static method to find subscriptions by domain
+PushSubscription.findByDomain = function(domainId) {
   return this.findAll({
-    where: { clientId },
+    where: { domainId },
     include: [{
-      model: require('./Client'),
-      as: 'client'
+      model: require('./Domain'),
+      as: 'domain'
     }]
   });
 };
 
-// Static method to find active subscriptions by client
-PushSubscription.findActiveByClient = async function(clientId) {
-  const { Client } = require('./index');
+// Static method to find active subscriptions by domain
+PushSubscription.findActiveByDomain = async function(domainId) {
+  const { Domain } = require('./index');
   
   return this.findAll({
-    where: { clientId },
+    where: { domainId },
     include: [{
-      model: Client,
-      as: 'client',
+      model: Domain,
+      as: 'domain',
       where: { status: 'active' },
       required: true
     }]
@@ -133,28 +141,20 @@ PushSubscription.findActiveByClient = async function(clientId) {
 };
 
 // Static method to remove subscription by endpoint
-PushSubscription.removeByEndpoint = function(endpoint, clientId) {
+PushSubscription.removeByEndpoint = function(endpoint, domainId) {
   return this.destroy({
     where: {
-      clientId,
-      [sequelize.Op.and]: [
-        sequelize.where(
-          sequelize.literal("subscription->>'endpoint'"),
-          endpoint
-        )
-      ]
+      domainId,
+      endpoint
     }
   });
 };
 
 // Instance method to check if subscription is valid
 PushSubscription.prototype.isValid = function() {
-  const subscription = this.subscription;
-  return subscription && 
-         subscription.endpoint && 
-         subscription.keys && 
-         subscription.keys.p256dh && 
-         subscription.keys.auth;
+  return this.endpoint && 
+         this.p256dh && 
+         this.auth;
 };
 
 module.exports = PushSubscription;

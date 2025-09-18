@@ -3,20 +3,20 @@ const { sequelize } = require('../config/database');
 
 const Notification = sequelize.define('Notification', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
-  clientId: {
-    type: DataTypes.UUID,
+  domainId: {
+    type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Clients',
+      model: 'Domains',
       key: 'id'
     },
     validate: {
       notEmpty: {
-        msg: 'Client ID is required'
+        msg: 'Domain ID is required'
       }
     }
   },
@@ -36,139 +36,86 @@ const Notification = sequelize.define('Notification', {
       this.setDataValue('title', value.trim());
     }
   },
-  content: {
-    type: DataTypes.STRING(500),
+  body: {
+    type: DataTypes.TEXT,
     allowNull: false,
     validate: {
       notEmpty: {
-        msg: 'Content is required'
-      },
-      len: {
-        args: [1, 500],
-        msg: 'Content cannot exceed 500 characters'
+        msg: 'Body is required'
       }
     },
     set(value) {
-      this.setDataValue('content', value.trim());
+      this.setDataValue('body', value.trim());
     }
   },
-  promoImageUrl: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    validate: {
-      isUrl: {
-        msg: 'Promo image URL must be a valid HTTP/HTTPS URL'
-      }
-    },
-    set(value) {
-      if (value) {
-        this.setDataValue('promoImageUrl', value.trim());
-      } else {
-        this.setDataValue('promoImageUrl', null);
-      }
-    }
-  },
-  sentAt: {
-    type: DataTypes.DATE,
+  icon: {
+    type: DataTypes.STRING,
     allowNull: true
   },
-  status: {
-    type: DataTypes.ENUM('pending', 'sent', 'failed'),
-    defaultValue: 'pending'
+  url: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
-  recipientCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
-  },
-  successCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
-  },
-  failureCount: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0,
-    validate: {
-      min: 0
-    }
-  },
-  errorMessage: {
-    type: DataTypes.TEXT,
-    allowNull: true,
-    set(value) {
-      if (value) {
-        this.setDataValue('errorMessage', value.trim());
-      } else {
-        this.setDataValue('errorMessage', null);
-      }
-    }
-  }
+  sentAt: {
+     type: DataTypes.DATE,
+     allowNull: true,
+     defaultValue: DataTypes.NOW
+   }
 }, {
   tableName: 'Notifications',
   timestamps: true,
   indexes: [
     {
-      fields: ['clientId']
+      fields: ['domainId']
     },
     {
       fields: ['sentAt']
-    },
-    {
-      fields: ['status']
-    },
-    {
-      fields: ['clientId', 'sentAt']
     }
   ],
   hooks: {
     beforeCreate: async (notification, options) => {
-      const { Client } = require('./index');
+      const { Domain } = require('./index');
       
-      const client = await Client.findByPk(notification.clientId, {
+      const domain = await Domain.findByPk(notification.domainId, {
         transaction: options.transaction
       });
       
-      if (!client) {
-        throw new Error('Client not found');
+      if (!domain) {
+        throw new Error('Domain not found');
       }
     },
     beforeUpdate: async (notification, options) => {
-      if (notification.changed('clientId')) {
-        const { Client } = require('./index');
+      if (notification.changed('domainId')) {
+        const { Domain } = require('./index');
         
-        const client = await Client.findByPk(notification.clientId, {
+        const domain = await Domain.findByPk(notification.domainId, {
           transaction: options.transaction
         });
         
-        if (!client) {
-          throw new Error('Client not found');
+        if (!domain) {
+          throw new Error('Domain not found');
         }
       }
     }
   }
 });
 
-// Static method to find notifications by client
-Notification.findByClient = function(clientId, limit = 50) {
+// Static method to find notifications by domain
+Notification.findByDomain = function(domainId, limit = 50) {
   return this.findAll({
-    where: { clientId },
+    where: { domainId },
     include: [{
-      model: require('./Client'),
-      as: 'client'
+      model: require('./Domain'),
+      as: 'domain'
     }],
     order: [['sentAt', 'DESC']],
     limit
   });
 };
 
-// Static method to get notification statistics for a client
-Notification.getClientStats = async function(clientId, startDate, endDate) {
-  const whereClause = { clientId };
+// Static method to get notification statistics for a domain
+Notification.getDomainStats = async function(domainId, startDate, endDate) {
+  const whereClause = { domainId };
   
   if (startDate || endDate) {
     whereClause.sentAt = {};
