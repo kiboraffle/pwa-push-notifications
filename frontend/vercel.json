@@ -24,6 +24,6 @@
     }
   ],
   "env": {
-    "REACT_APP_API_URL": "https://pwa-push-notifications-tan.vercel.app"
+    "REACT_APP_API_URL": "https://pwa-push-notifications-tan.vercel.app/api"
   }
 }
